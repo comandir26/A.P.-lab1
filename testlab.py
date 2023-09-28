@@ -1,25 +1,47 @@
 import os
 import shutil
 import time
-import random
-from bs4 import BeautifulSoup
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.common import exceptions 
 import requests
 import cv2
 
 def send_requests(url, name):
     result = []
-    for page in range(1, 10):
-        html_page = requests.get(str(url) + name + "?page=" + str(page), headers={"User-Agent":"Mozilla/5.0"})
+    page = 1
+    '''
+    while True:
+        html_page = requests.get(url + name + "?page=" + str(page), headers={'User-Agent':'Mozilla/5.0'})
         soup = BeautifulSoup(html_page.text, "html.parser")
-        img_links = soup.find_all('img', class_ = 'serp-item__thumb justifier__thumb')
+        img_links = soup.find_all("a", class_ = "serp-item__link")     
+        if len(img_links) > 0:
+            page+=1
         result += img_links
-        print(len(result))
-        time.sleep(5)
+        print(len(result)) 
+        time.sleep(5) 
+        if len(result) > 0:
+            break
+    '''  
+    html_page = webdriver.Edge()
+    while True:
+        try: 
+            html_page.get(url + name)#+ "?p=" + str(page)  
+            html_page.find_element(By.CLASS_NAME, "CheckboxCaptcha-Anchor").click()
+        except exceptions.NoSuchElementException:
+            print('No Captcha') 
+        img_links = html_page.find_elements(By.CLASS_NAME, 'serp-item__link')
+        if len(img_links) > 0:
+            page+=1
+        result += img_links
+        print(len(result)) 
+        time.sleep(5) 
+        if len(result) > 0:
+            break
+        html_page.quit()
     return result
 
 def make_folders(names):
-    if not os.path.isdir('dataset'):
-        os.mkdir('dataset')
     if not os.path.isdir('dataset'):
         os.mkdir('dataset')
     os.chdir('dataset')
@@ -30,31 +52,44 @@ def make_folders(names):
 
 def load_images(links, filename):
     os.chdir(filename)
-    number = 0
-    for link in links:
-        try:
-            link = link.get('src')
-            img = requests.get('https:' + str(link))
-            with open(str(number).zfill(4) + '.jpg', 'wb') as f:
-                f.write(img.content)
-        except:
-            continue
-        number+=1
+    for number, link in enumerate(links):
+        #image_page = webdriver.Edge()
+        href = link.get_attribute('href')
+        #response = requests.get(href)
+        response = None    
+        while response is None:    
+            try:
+                response = requests.get(href, timeout=3)
+                break
+            except requests.exceptions.ConnectionError as e: 
+                print(e)
+                time.sleep(5)
+                continue
+        
+        with open(str(number).zfill(4) + '.jpg', 'wb') as f:
+            f.write(response.content)
+            print('Success')
+        time.sleep(2)
+
     os.chdir('..')
     print(os.getcwd())
 
-if os.path.isdir("dataset/polar_bear") and os.path.isdir("dataset/brown_bear"):
-    shutil.rmtree("dataset/polar_bear") 
-    shutil.rmtree("dataset/brown_bear")    
+
 
 url = "https://yandex.ru/images/search?text="
+class1 = "polarbear"
+class2 = "brownbear"
 
-make_folders(('polar_bear', 'brown_bear'))
+if os.path.isdir("dataset/" + class1) and os.path.isdir("dataset/" + class2):
+   shutil.rmtree("dataset/" + class1) 
+   shutil.rmtree("dataset/" + class2)    
+
+make_folders((class1, class2))
+
+polarbear_links = send_requests(url, class1)
+load_images(polarbear_links, class1)
 
 time.sleep(7)
-polarbear_links = send_requests(url, 'polarbear')
-load_images(polarbear_links, 'polar_bear')
 
-time.sleep(7)
-brownbear_links = send_requests(url, 'brownbear')
-load_images(brownbear_links, 'brown_bear')
+brownbear_links = send_requests(url, class2)
+load_images(brownbear_links, class2)
