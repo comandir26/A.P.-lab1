@@ -1,90 +1,121 @@
 import os
-import shutil
 import time
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.common import exceptions 
+import shutil
 import requests
-from bs4 import BeautifulSoup
-import cv2
+from requests import exceptions as r_exc
+from selenium import webdriver
+from selenium.common import exceptions
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as ec
 
-def send_requests(url, name, html_page):
-    result = []
-    page = 1
-    while True:
-        full_url = url + name #+ "?p=" + str(page)
-        try: 
-            html_page.get(full_url)  
-            html_page.find_element(By.CLASS_NAME, "CheckboxCaptcha-Anchor").click()
+
+def load_images(links, number_of_image):
+    driver = webdriver.Edge()
+    for link in links:
+        href = link.get_attribute('href')
+        driver.get(href)
+        driver.implicitly_wait(3.5)
+        try:
+            driver.find_element(
+                By.CLASS_NAME, "CheckboxCaptcha-Anchor").click()
         except exceptions.NoSuchElementException:
-            print('No Captcha') 
-        img_links = html_page.find_elements(By.CLASS_NAME, 'serp-item__link')
+            pass
+        try:
+            img_origin = WebDriverWait(driver, 7).until(
+                ec.presence_of_element_located(
+                    (By.CLASS_NAME, "MMImage-Origin"))
+            )
+        except exceptions.TimeoutException:
+            print("No such element")
+            time.sleep(2)
+            continue
+        img_link = img_origin.get_attribute('src')
+        try:
+            response = requests.get(img_link, timeout=10)
+        except r_exc.ReadTimeout:
+            print("The read operation timed out")
+            time.sleep(3)
+            continue
+
+        with open(str(number_of_image).zfill(4) + '.jpg', 'wb') as f:
+            f.write(response.content)
+            print('Success')
+            number_of_image += 1
+            if (number_of_image > 1040):
+                break
+
+    driver.quit()
+    return number_of_image
+
+
+def get_images(name):
+    os.chdir(name)
+    url = "https://yandex.ru/images/search?text="
+    full_url = url + name
+    number_of_image = 0
+    driver = webdriver.Edge()
+    while True:
+        try:
+            driver.get(full_url)
+            driver.implicitly_wait(0.5)
+            driver.find_element(
+                By.CLASS_NAME, "CheckboxCaptcha-Anchor").click()
+        except exceptions.NoSuchElementException:
+            print('No Captcha')
+        body = driver.find_element(By.CSS_SELECTOR, 'body')
+        for i in range(40):
+            body.send_keys(Keys.PAGE_DOWN)
+            try:
+                driver.find_element(
+                    By.CLASS_NAME, "CheckboxCaptcha-Anchor").click()
+            except exceptions.NoSuchElementException:
+                pass
+            if i in range(25, 40):
+                try:
+                    full_url = driver.find_element(
+                        By.CLASS_NAME, "button2").get_attribute('href')
+                    break
+                except exceptions.NoSuchElementException:
+                    pass
+            time.sleep(0.4)
+        driver.implicitly_wait(5)
+        img_links = driver.find_elements(By.CLASS_NAME, 'serp-item__link')
         if len(img_links) > 0:
-            page+=1
-        result += img_links
-        print(len(result)) 
-        time.sleep(2) 
-        if len(result) > 0:
-            #html_page.quit()
-            break   
-    return result
+            print(len(img_links))
+            number_of_image = load_images(img_links, number_of_image)
+            print("Page is done!")
+            time.sleep(10)
+
+        if number_of_image > 1000:
+            driver.quit()
+            os.chdir('..')
+            break
+
 
 def make_folders(names):
     if not os.path.isdir('dataset'):
         os.mkdir('dataset')
+
     os.chdir('dataset')
-    if not os.path.isdir(names[0]):
-        os.mkdir(names[0])
-    if not os.path.isdir(names[1]):
-        os.mkdir(names[1])
 
-def load_images(links, filename):
-    os.chdir(filename)
-    img_page = webdriver.Edge()
-    for number, link in enumerate(links): 
-        time.sleep(3)
-        href = link.get_attribute('href')
-        img_page.get(href)
-        time.sleep(2)
-        try:
-            #img_origin = img_page.find_element(By.CLASS_NAME, "MMImage-Origin")
-            img_origin = img_page.find_element(By.CLASS_NAME, "MMImage-Origin")
-        except exceptions.NoSuchElementException:
-            print("No such element")
-            continue
-        img_link = img_origin.get_attribute('src')
-        response = requests.get(img_link, timeout=3)
-        time.sleep(2)
-        with open(str(number).zfill(4) + '.jpg', 'wb') as f:
-            f.write(response.content)
-            print('Success')
-        
-    os.chdir('..')
-    img_page.close()
-    print(os.getcwd())
+    if os.path.isdir(names[0]) and os.path.isdir(names[1]):
+        shutil.rmtree(names[0])
+        shutil.rmtree(names[1])
+
+    os.mkdir(names[0])
+
+    os.mkdir(names[1])
 
 
-
-url = "https://yandex.ru/images/search?text="
 class1 = "polarbear"
 class2 = "brownbear"
 
-'''
-if os.path.isdir("dataset/" + class1) and os.path.isdir("dataset/" + class2):
-   shutil.rmtree("dataset/" + class1) 
-   shutil.rmtree("dataset/" + class2)
-'''   
-
 make_folders((class1, class2))
 
-html_page = webdriver.Edge()
+get_images(class1)
 
-polarbear_links = send_requests(url, class1, html_page)
-load_images(polarbear_links, class1)
+time.sleep(30)
 
-time.sleep(5)
-
-brownbear_links = send_requests(url, class2, html_page)
-load_images(brownbear_links, class2)
-
-#html_page.close()
+get_images(class2)
